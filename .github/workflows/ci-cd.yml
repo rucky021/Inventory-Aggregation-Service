@@ -27,19 +27,19 @@ on:
       - main
       - develop
     paths:
-      - 'project/**'
+      - '**'
       - 'Dockerfile'
   pull_request:
     branches:
       - main
     paths:
-      - 'project/**'
+      - '**'
 
 env:
   DOTNET_VERSION: '11.0.x'
   BUILD_CONFIGURATION: Release
-  PROJECT_PATH: project/src/InventoryAggregator/InventoryAggregator.csproj
-  TEST_PROJECT_PATH: project/tests/InventoryAggregator.Tests/InventoryAggregator.Tests.csproj
+  PROJECT_PATH: src/InventoryAggregator/InventoryAggregator.csproj
+  TEST_PROJECT_PATH: tests/InventoryAggregator.Tests/InventoryAggregator.Tests.csproj
   PUBLISH_DIR: ${{ github.workspace }}\publish
   DOCKER_IMAGE_NAME: inventory-aggregator
 
@@ -71,10 +71,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            project/src/InventoryAggregator/bin
-            project/src/InventoryAggregator/obj
-            project/tests/InventoryAggregator.Tests/bin
-            project/tests/InventoryAggregator.Tests/obj
+            src/InventoryAggregator/bin
+            src/InventoryAggregator/obj
+            tests/InventoryAggregator.Tests/bin
+            tests/InventoryAggregator.Tests/obj
           key: build-${{ github.sha }}
 
 # =============================================================================
@@ -99,10 +99,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            project/src/InventoryAggregator/bin
-            project/src/InventoryAggregator/obj
-            project/tests/InventoryAggregator.Tests/bin
-            project/tests/InventoryAggregator.Tests/obj
+            src/InventoryAggregator/bin
+            src/InventoryAggregator/obj
+            tests/InventoryAggregator.Tests/bin
+            tests/InventoryAggregator.Tests/obj
           key: build-${{ github.sha }}
 
       # Rebuild test project if cache missed
