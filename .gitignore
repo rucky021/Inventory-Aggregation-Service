@@ -1,0 +1,19 @@
+# Build outputs
+bin/
+obj/
+
+# User secrets (never commit)
+**/secrets.json
+
+# IDE
+.vs/
+.vscode/
+*.user
+
+# Environment overrides that may contain keys
+appsettings.Local.json
+.env
+.env.*
+
+# NuGet
+*.nupkg

@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src\InventoryAggregator\InventoryAggregator.csproj" />
+  <Project Path="tests\InventoryAggregator.Tests\InventoryAggregator.Tests.csproj" />
+</Solution>
