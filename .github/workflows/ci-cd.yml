@@ -1,13 +1,13 @@
 # =============================================================================
-# GitHub Actions CI/CD — Inventory Aggregation Service
+# GitHub Actions CI/CD - Inventory Aggregation Service
 # Runner : windows-latest (Windows Server 2022)
 #
 # Jobs (sequential):
-#   1. build   — restore + compile
-#   2. test    — unit tests, coverage, test results
-#   3. deploy  — publish to Azure App Service + push Docker image to ACR
+#   1. build  - restore + compile
+#   2. test   - unit tests, coverage, test results
+#   3. deploy - publish to Azure App Service + push Docker image to ACR
 #
-# Required secrets (Settings → Secrets and variables → Actions):
+# Required secrets (Settings -> Secrets and variables -> Actions):
 #   AZURE_WEBAPP_PUBLISH_PROFILE   Web App publish profile XML (from Azure Portal)
 #   INVENTORYAPI_BASEURL           Upstream API base URL
 #   INVENTORYAPI_APIKEY            Upstream API key
@@ -27,13 +27,16 @@ on:
       - main
       - develop
     paths:
-      - '**'
+      - 'src/**'
+      - 'tests/**'
       - 'Dockerfile'
+      - '.github/workflows/ci-cd.yml'
   pull_request:
     branches:
       - main
     paths:
-      - '**'
+      - 'src/**'
+      - 'tests/**'
 
 env:
   DOTNET_VERSION: '11.0.x'
@@ -44,11 +47,11 @@ env:
   DOCKER_IMAGE_NAME: inventory-aggregator
 
 # =============================================================================
-# Job 1 — BUILD
+# Job 1 - BUILD
 # =============================================================================
 jobs:
   build:
-    name: '1 · Build'
+    name: '1 - Build'
     runs-on: windows-latest
 
     steps:
@@ -66,7 +69,7 @@ jobs:
       - name: Build solution
         run: dotnet build ${{ env.PROJECT_PATH }} --configuration ${{ env.BUILD_CONFIGURATION }} --no-restore
 
-      # Cache build output so the test job doesn't recompile
+      # Cache build output so the test job reuses compiled binaries
       - name: Cache build output
         uses: actions/cache@v4
         with:
@@ -78,10 +81,10 @@ jobs:
           key: build-${{ github.sha }}
 
 # =============================================================================
-# Job 2 — TEST
+# Job 2 - TEST
 # =============================================================================
   test:
-    name: '2 · Test'
+    name: '2 - Test'
     runs-on: windows-latest
     needs: build
 
@@ -94,7 +97,6 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      # Restore cache from build job
       - name: Restore build cache
         uses: actions/cache@v4
         with:
@@ -105,8 +107,8 @@ jobs:
             tests/InventoryAggregator.Tests/obj
           key: build-${{ github.sha }}
 
-      # Rebuild test project if cache missed
-      - name: Restore packages (test project)
+      # Rebuild if cache missed (e.g. first run)
+      - name: Restore packages
         run: dotnet restore ${{ env.TEST_PROJECT_PATH }}
 
       - name: Build test project
@@ -138,14 +140,14 @@ jobs:
           path: '${{ github.workspace }}\TestResults\**\coverage.cobertura.xml'
 
 # =============================================================================
-# Job 3 — DEPLOY
+# Job 3 - DEPLOY
 # Runs only on push to main (not on PRs or develop pushes).
-# Two parallel tasks:
-#   a) Publish zip → deploy to Azure App Service
-#   b) Docker build → push to Azure Container Registry
+# Two tasks run sequentially:
+#   a) dotnet publish -> zip deploy to Azure App Service
+#   b) Docker build & push to Azure Container Registry
 # =============================================================================
   deploy:
-    name: '3 · Deploy'
+    name: '3 - Deploy'
     runs-on: windows-latest
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -163,7 +165,7 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      # ── a) Publish and deploy to Azure App Service ────────────────────────
+      # -- a) Publish and deploy to Azure App Service -------------------------
 
       - name: Restore packages
         run: dotnet restore ${{ env.PROJECT_PATH }}
@@ -185,7 +187,7 @@ jobs:
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
           package: ${{ env.PUBLISH_DIR }}
 
-      # ── Inject app settings (keeps secrets out of source control) ─────────
+      # -- Inject app settings (keeps secrets out of source control) ----------
 
       - name: Azure login
         uses: azure/login@v2
@@ -204,7 +206,7 @@ jobs:
               { "name": "ASPNETCORE_ENVIRONMENT", "value": "Production",                           "slotSetting": false }
             ]
 
-      # ── b) Docker build and push to ACR ───────────────────────────────────
+      # -- b) Docker build and push to ACR ------------------------------------
 
       - name: Log in to Azure Container Registry
         uses: docker/login-action@v3
