@@ -1,0 +1,224 @@
+# =============================================================================
+# GitHub Actions CI/CD — Inventory Aggregation Service
+# Runner : windows-latest (Windows Server 2022)
+#
+# Jobs (sequential):
+#   1. build   — restore + compile
+#   2. test    — unit tests, coverage, test results
+#   3. deploy  — publish to Azure App Service + push Docker image to ACR
+#
+# Required secrets (Settings → Secrets and variables → Actions):
+#   AZURE_WEBAPP_PUBLISH_PROFILE   Web App publish profile XML (from Azure Portal)
+#   INVENTORYAPI_BASEURL           Upstream API base URL
+#   INVENTORYAPI_APIKEY            Upstream API key
+#   ACR_LOGIN_SERVER               e.g. yourregistry.azurecr.io
+#   ACR_USERNAME                   ACR admin username
+#   ACR_PASSWORD                   ACR admin password
+#   AZURE_CREDENTIALS              Service principal JSON (az ad sp create-for-rbac)
+#   AZURE_RESOURCE_GROUP           Resource group name
+#   AZURE_WEBAPP_NAME              App Service name
+# =============================================================================
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'project/**'
+      - 'Dockerfile'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'project/**'
+
+env:
+  DOTNET_VERSION: '11.0.x'
+  BUILD_CONFIGURATION: Release
+  PROJECT_PATH: project/src/InventoryAggregator/InventoryAggregator.csproj
+  TEST_PROJECT_PATH: project/tests/InventoryAggregator.Tests/InventoryAggregator.Tests.csproj
+  PUBLISH_DIR: ${{ github.workspace }}\publish
+  DOCKER_IMAGE_NAME: inventory-aggregator
+
+# =============================================================================
+# Job 1 — BUILD
+# =============================================================================
+jobs:
+  build:
+    name: '1 · Build'
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore NuGet packages
+        run: dotnet restore ${{ env.PROJECT_PATH }}
+
+      - name: Build solution
+        run: dotnet build ${{ env.PROJECT_PATH }} --configuration ${{ env.BUILD_CONFIGURATION }} --no-restore
+
+      # Cache build output so the test job doesn't recompile
+      - name: Cache build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            project/src/InventoryAggregator/bin
+            project/src/InventoryAggregator/obj
+            project/tests/InventoryAggregator.Tests/bin
+            project/tests/InventoryAggregator.Tests/obj
+          key: build-${{ github.sha }}
+
+# =============================================================================
+# Job 2 — TEST
+# =============================================================================
+  test:
+    name: '2 · Test'
+    runs-on: windows-latest
+    needs: build
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # Restore cache from build job
+      - name: Restore build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            project/src/InventoryAggregator/bin
+            project/src/InventoryAggregator/obj
+            project/tests/InventoryAggregator.Tests/bin
+            project/tests/InventoryAggregator.Tests/obj
+          key: build-${{ github.sha }}
+
+      # Rebuild test project if cache missed
+      - name: Restore packages (test project)
+        run: dotnet restore ${{ env.TEST_PROJECT_PATH }}
+
+      - name: Build test project
+        run: dotnet build ${{ env.TEST_PROJECT_PATH }} --configuration ${{ env.BUILD_CONFIGURATION }} --no-restore
+
+      - name: Run unit tests
+        run: >
+          dotnet test ${{ env.TEST_PROJECT_PATH }}
+          --configuration ${{ env.BUILD_CONFIGURATION }}
+          --no-build
+          --collect:"XPlat Code Coverage"
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory ${{ github.workspace }}\TestResults
+
+      - name: Publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Unit Test Results
+          path: '${{ github.workspace }}\TestResults\**\*.trx'
+          reporter: dotnet-trx
+          fail-on-error: true
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: '${{ github.workspace }}\TestResults\**\coverage.cobertura.xml'
+
+# =============================================================================
+# Job 3 — DEPLOY
+# Runs only on push to main (not on PRs or develop pushes).
+# Two parallel tasks:
+#   a) Publish zip → deploy to Azure App Service
+#   b) Docker build → push to Azure Container Registry
+# =============================================================================
+  deploy:
+    name: '3 · Deploy'
+    runs-on: windows-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    environment:
+      name: production
+      url: https://${{ secrets.AZURE_WEBAPP_NAME }}.azurewebsites.net
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # ── a) Publish and deploy to Azure App Service ────────────────────────
+
+      - name: Restore packages
+        run: dotnet restore ${{ env.PROJECT_PATH }}
+
+      - name: Build solution
+        run: dotnet build ${{ env.PROJECT_PATH }} --configuration ${{ env.BUILD_CONFIGURATION }} --no-restore
+
+      - name: Publish app
+        run: >
+          dotnet publish ${{ env.PROJECT_PATH }}
+          --configuration ${{ env.BUILD_CONFIGURATION }}
+          --no-build
+          --output ${{ env.PUBLISH_DIR }}
+
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: ${{ env.PUBLISH_DIR }}
+
+      # ── Inject app settings (keeps secrets out of source control) ─────────
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set App Service settings
+        uses: azure/appservice-settings@v1
+        with:
+          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+          resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          app-settings-json: |
+            [
+              { "name": "INVENTORYAPI__BASEURL",  "value": "${{ secrets.INVENTORYAPI_BASEURL }}", "slotSetting": false },
+              { "name": "INVENTORYAPI__APIKEY",   "value": "${{ secrets.INVENTORYAPI_APIKEY }}",  "slotSetting": false },
+              { "name": "ASPNETCORE_ENVIRONMENT", "value": "Production",                           "slotSetting": false }
+            ]
+
+      # ── b) Docker build and push to ACR ───────────────────────────────────
+
+      - name: Log in to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.DOCKER_IMAGE_NAME }}:${{ github.run_number }}
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.DOCKER_IMAGE_NAME }}:latest
