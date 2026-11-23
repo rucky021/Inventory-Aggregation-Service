@@ -1,0 +1,28 @@
+# Inventory Aggregation Service – Architecture Overview
+
+The Inventory Aggregation Service is an ASP.NET Core Web API built on .NET 11. It integrates with an upstream Inventory API, retrieves paginated inventory records, and provides aggregated inventory data through REST endpoints.
+
+### Architecture & Design
+
+The application follows a layered architecture with clear separation of responsibilities:
+
+- **Controller Layer:** Exposes REST endpoints, including `GET /api/aggregation`, and handles HTTP requests and responses.
+- **Client Layer:** `InventoryApiClient` manages upstream HTTP communication, API key injection, pagination, error handling, and retry policies.
+- **Service Layer:** `InventoryAggregationService` contains business logic, including category grouping, inventory value calculation, zero-quantity filtering, and most-recent-record selection.
+- **Model Layer:** Defines upstream API models and structured aggregation response objects.
+
+Two interfaces, `IInventoryApiClient` and `IInventoryAggregationService`, provide abstraction and support independent unit testing.
+
+### Performance & Reliability
+
+The service retrieves the first page sequentially to determine the total page count, then fetches remaining pages concurrently using `Task.WhenAll`. Polly provides resilience through three retry attempts with exponential backoff, honoring `Retry-After` headers, and a circuit breaker that opens after five consecutive failures for 30 seconds. Upstream failures are translated into typed exceptions and returned as structured HTTP 502 responses.
+
+### Security & Configuration
+
+The upstream API URL and API key are managed through environment variables, .NET User Secrets, or application configuration. Sensitive credentials are excluded from source control and injected during deployment.
+
+### Testing & Deployment
+
+The solution includes 23 unit tests covering aggregation logic, HTTP communication, pagination, and resilience. Swagger/OpenAPI provides interactive API documentation. GitHub Actions automates build, test, and deployment to Azure App Service and Azure Container Registry using Docker.
+
+The architecture emphasizes **separation of concerns, testability, predictable performance, and resilience**, while keeping the business logic independent of external HTTP infrastructure.

@@ -82,7 +82,7 @@ public sealed class AggregationController : ControllerBase
     /// <response code="200">Returns the full unfiltered record list.</response>
     /// <response code="502">The upstream Inventory API was unreachable or returned an error.</response>
     /// <response code="500">An unexpected internal error occurred.</response>
-    [HttpGet("loadall")]
+    /*[HttpGet("loadall")]
     [ProducesResponseType(typeof(RawInventoryResult), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -107,5 +107,5 @@ public sealed class AggregationController : ControllerBase
             _logger.LogError(ex, "Unexpected error loading all records.");
             return StatusCode(500, new { error = "An unexpected error occurred." });
         }
-    }
+    }*/
 }

@@ -1,0 +1,6 @@
+Assumptions and Known Limitations
+1. API Authentication: Implemente Bearer Token authentication to secure API endpoints. Token expiration is included to limit how long a token remains valid.
+2. Detailed Error Handler: customized error handling, not expouse http error code to customer
+3. Additional Logging:  splunk service to capture microservices logs
+4. HTTPS: Assumed HTTPS is used to encrypt communication and protect tokens.
+Future Improvements: With more time, I would add refresh token support, improve security, expand error handling, and enhance logging and monitoring.
